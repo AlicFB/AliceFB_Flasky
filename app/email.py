@@ -1,5 +1,5 @@
 from threading import Thread
-from flask import current_app
+from flask import current_app, render_template
 import requests
 
 PROFESSOR_EMAIL = 'flaskaulasweb@zohomail.com'
@@ -75,5 +75,43 @@ def send_async_simple_message(app, recipients, subject, newUser):
 def send_simple_message(recipients, subject, newUser):
     app = current_app._get_current_object()
     thr = Thread(target=send_async_simple_message, args=[app, recipients, subject, newUser])
+    thr.start()
+    return thr
+
+
+def send_async_email(app, to, subject, text_body, html_body):
+    with app.app_context():
+        api_url = app.config.get('API_URL')
+        api_key = app.config.get('API_KEY')
+        if not api_url or not api_key:
+            print('[EMAIL] ERRO: API_URL ou API_KEY não configurados. '
+                  'Nenhum e-mail foi enviado.', flush=True)
+            return
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json"
+        }
+        payload = {
+            "personalizations": [{"to": [{"email": to}], "subject": subject}],
+            "from": {"email": app.config.get('API_FROM')},
+            "content": [
+                {"type": "text/plain", "value": text_body},
+                {"type": "text/html", "value": html_body}
+            ]
+        }
+        try:
+            resposta = requests.post(api_url, json=payload, headers=headers, timeout=10)
+            print(f'[EMAIL] status {resposta.status_code} para {to} - {resposta.text}', flush=True)
+        except Exception as e:
+            print(f'[EMAIL] FALHA ao enviar para {to}: exceção {e}', flush=True)
+
+
+def send_email(to, subject, template, **kwargs):
+    app = current_app._get_current_object()
+    full_subject = app.config['FLASKY_MAIL_SUBJECT_PREFIX'] + ' ' + subject
+    text_body = render_template(template + '.txt', **kwargs)
+    html_body = render_template(template + '.html', **kwargs)
+    thr = Thread(target=send_async_email,
+                 args=[app, to, full_subject, text_body, html_body])
     thr.start()
     return thr
